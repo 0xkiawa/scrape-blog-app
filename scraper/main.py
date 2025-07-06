@@ -6,8 +6,10 @@ from scraper_core import (
     extract_article_body
 )
 
+from storage import append_article_to_master_json
+
 def scrape_single_post():
-    url = "https://www.newyorker.com/news/the-weekend-essay/how-to-save-a-dog"
+    url = "https://www.newyorker.com/culture/photo-booth/sink-or-swim"
     html = fetch_article_html(url)
     print(f"Fetched {len(html)} characters of HTML.")
 
@@ -23,6 +25,14 @@ def scrape_single_post():
     content = extract_article_body(html)
     print("\n--- Article Content ---\n")
     print(content[:1000])
+
+    append_article_to_master_json({
+    "title": title,
+    "author": author,
+    "date": date,
+    "content": content
+})
+
 
 if __name__ == "__main__":
     scrape_single_post()

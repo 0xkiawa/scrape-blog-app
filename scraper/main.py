@@ -1,54 +1,43 @@
-"""
-Daily headline pull + trend detection.
+"""Run the News Intelligence Platform headline collection and story clustering."""
+from __future__ import annotations
 
-Run with:  python main.py
+import asyncio
+import logging
 
-What it does:
-  1. Fetches headline listings from 6 major outlets (titles + links only -
-     never full article text).
-  2. Saves the raw day's headlines to data/headlines_<date>.json.
-  3. Finds words/phrases that show up across multiple outlets - that
-     cross-source overlap is your trending-topic signal.
-  4. Saves the ranked trend report to data/trending_<date>.json and
-     prints a clean summary to the console so you can pick today's angle.
-"""
+from scraper.clustering.semantic import cluster_articles
+from scraper.configuration import load_publishers, load_taxonomy
+from scraper.database.sqlite import SQLiteStore
+from scraper.nlp.pipeline import enrich_articles
+from scraper.ranking.trends import build_stories
+from scraper.sources.manager import fetch_all
+from scraper.storage import save_headlines, save_trending
 
-from sites_config import SITES
-from headline_scraper import fetch_headlines
-from trend_analyzer import find_trending
-from storage import save_headlines, save_trending
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
-def run():
-    all_headlines = []
+async def run_async() -> list[dict]:
+    publishers = load_publishers()
+    print(f"📡 Fetching headlines from {len(publishers)} configured publishers...\n")
+    articles = await fetch_all(publishers)
+    if not articles:
+        print("\n⚠️  No headlines fetched. Check network access or feed availability.")
+        return []
+    enrich_articles(articles)
+    save_headlines(articles)
+    taxonomy = load_taxonomy()
+    clusters = cluster_articles(articles, similarity_threshold=taxonomy["thresholds"]["cluster_similarity"], min_cluster_size=taxonomy["thresholds"]["min_cluster_size"])
+    stories = build_stories(clusters)
+    save_trending(stories)
+    store = SQLiteStore("data/news_intelligence.sqlite3")
+    store.save_articles(articles); store.save_stories(stories)
+    print(f"\nFound {len(stories)} story cluster(s):\n")
+    for story in stories[:15]:
+        print(f"🔥 {story.title} — score {story.trend_score} ({story.status}), {story.coverage_count} articles")
+    return [s.to_dict() for s in stories]
 
-    print("📡 Fetching headlines from 6 sources...\n")
-    for site in SITES:
-        headlines = fetch_headlines(site["url"], site["name"])
-        print(f"  {site['name']:<18} -> {len(headlines)} headlines")
-        all_headlines.extend(headlines)
 
-    if not all_headlines:
-        print("\n⚠️  No headlines fetched. Check network access or site markup changes.")
-        return
-
-    save_headlines(all_headlines)
-
-    print("\n🔎 Detecting cross-source trending topics (min. 2 outlets)...\n")
-    trending = find_trending(all_headlines, min_sources=2)
-    save_trending(trending)
-
-    if not trending:
-        print("No overlapping topics today - every outlet went a different direction.")
-        return
-
-    print(f"Found {len(trending)} trending phrase(s):\n")
-    for t in trending[:15]:
-        sources_str = ", ".join(t["sources"])
-        print(f"🔥 \"{t['phrase']}\"  —  {t['num_sources']} outlets ({sources_str})")
-        for ex in t["examples"][:3]:
-            print(f"     • [{ex['source']}] {ex['title']}")
-        print()
+def run() -> list[dict]:
+    return asyncio.run(run_async())
 
 
 if __name__ == "__main__":

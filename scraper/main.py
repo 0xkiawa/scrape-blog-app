@@ -1,38 +1,55 @@
-from scraper_core import (
-    fetch_article_html,
-    extract_title_from_html,
-    extract_author_from_html,
-    extract_date_from_html,
-    extract_article_body
-)
+"""
+Daily headline pull + trend detection.
 
-from storage import append_article_to_master_json
+Run with:  python main.py
 
-def scrape_single_post():
-    url = "https://www.newyorker.com/culture/photo-booth/sink-or-swim"
-    html = fetch_article_html(url)
-    print(f"Fetched {len(html)} characters of HTML.")
+What it does:
+  1. Fetches headline listings from 6 major outlets (titles + links only -
+     never full article text).
+  2. Saves the raw day's headlines to data/headlines_<date>.json.
+  3. Finds words/phrases that show up across multiple outlets - that
+     cross-source overlap is your trending-topic signal.
+  4. Saves the ranked trend report to data/trending_<date>.json and
+     prints a clean summary to the console so you can pick today's angle.
+"""
 
-    title = extract_title_from_html(html)
-    print(f"Article title: {title}")
+from sites_config import SITES
+from headline_scraper import fetch_headlines
+from trend_analyzer import find_trending
+from storage import save_headlines, save_trending
 
-    author = extract_author_from_html(html)
-    print(f"Author: {author}")
 
-    date = extract_date_from_html(html)
-    print(f"Published: {date}")
+def run():
+    all_headlines = []
 
-    content = extract_article_body(html)
-    print("\n--- Article Content ---\n")
-    print(content[:1000])
+    print("📡 Fetching headlines from 6 sources...\n")
+    for site in SITES:
+        headlines = fetch_headlines(site["url"], site["name"])
+        print(f"  {site['name']:<18} -> {len(headlines)} headlines")
+        all_headlines.extend(headlines)
 
-    append_article_to_master_json({
-    "title": title,
-    "author": author,
-    "date": date,
-    "content": content
-})
+    if not all_headlines:
+        print("\n⚠️  No headlines fetched. Check network access or site markup changes.")
+        return
+
+    save_headlines(all_headlines)
+
+    print("\n🔎 Detecting cross-source trending topics (min. 2 outlets)...\n")
+    trending = find_trending(all_headlines, min_sources=2)
+    save_trending(trending)
+
+    if not trending:
+        print("No overlapping topics today - every outlet went a different direction.")
+        return
+
+    print(f"Found {len(trending)} trending phrase(s):\n")
+    for t in trending[:15]:
+        sources_str = ", ".join(t["sources"])
+        print(f"🔥 \"{t['phrase']}\"  —  {t['num_sources']} outlets ({sources_str})")
+        for ex in t["examples"][:3]:
+            print(f"     • [{ex['source']}] {ex['title']}")
+        print()
 
 
 if __name__ == "__main__":
-    scrape_single_post()
+    run()

@@ -1,34 +1,39 @@
-import os
+"""
+Storage for the headline-only pipeline.
+
+We save one dated JSON file per day containing all scraped headlines,
+plus a separate dated "trending" file with the cross-source overlap report.
+Nothing here ever stores full article body text.
+"""
+
 import json
+import os
+from datetime import date
 
-def append_article_to_master_json(article: dict, filename=None) -> None:
-    """
-    Appends a single article to a shared JSON file outside scraper/.
-    Automatically assigns a unique ID.
-    """
-    assert isinstance(article, dict), "Article must be a dictionary."
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
-    # Set path to save in project root (../articles.json)
-    if filename is None:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        filename = os.path.join(base_dir, "articles.json")
 
-    data = []
+def _ensure_data_dir() -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
 
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                assert isinstance(data, list), "File must contain a list of articles."
-        except (json.JSONDecodeError, AssertionError):
-            print("⚠️ Warning: Could not read existing file. Starting fresh.")
-            data = []
 
-    next_id = 1 if not data else max(a.get("id", 0) for a in data) + 1
-    article_with_id = {"id": next_id, **article}
-    data.append(article_with_id)
+def save_headlines(headlines: list[dict], day: str = None) -> str:
+    """Save the day's raw headlines. Returns the file path written."""
+    _ensure_data_dir()
+    day = day or date.today().isoformat()
+    path = os.path.join(DATA_DIR, f"headlines_{day}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"date": day, "headlines": headlines}, f, ensure_ascii=False, indent=2)
+    print(f"✅ Saved {len(headlines)} headlines to '{path}'")
+    return path
 
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
 
-    print(f"✅ Article saved with ID {next_id} in '{filename}'")
+def save_trending(trending: list[dict], day: str = None) -> str:
+    """Save the day's trending-topic report. Returns the file path written."""
+    _ensure_data_dir()
+    day = day or date.today().isoformat()
+    path = os.path.join(DATA_DIR, f"trending_{day}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"date": day, "trending": trending}, f, ensure_ascii=False, indent=2)
+    print(f"✅ Saved {len(trending)} trending phrases to '{path}'")
+    return path

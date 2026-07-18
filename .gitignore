@@ -6,6 +6,10 @@ Cargo.lock
 __pycache__/
 *.pyc
 
+# Scraper output (headline/trend data + legacy full-text file - don't track scraped content)
+scraper/data/
+articles.json
+
 # OS and editor files
 .DS_Store
 Thumbs.db
